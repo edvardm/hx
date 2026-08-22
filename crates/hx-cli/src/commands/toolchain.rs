@@ -4,6 +4,7 @@ use crate::cli::ToolchainCommands;
 use anyhow::Result;
 use hx_cache::{CabalIndexStatus, toolchain_dir};
 use hx_config::{Manifest, find_project_root};
+use hx_core::EnvVars;
 use hx_solver::bhc_platform::find_platform_for_bhc;
 use hx_toolchain::{
     BhcInstallOptions, GhcSource, InstallStrategy, RECOMMENDED_BHC_VERSION,
@@ -12,6 +13,13 @@ use hx_toolchain::{
     known_versions, remove_ghc, set_active,
 };
 use hx_ui::{Output, Style};
+
+/// Seconds in a day, for converting [`CabalIndexStatus::Present`]'s age.
+const SECONDS_PER_DAY: u64 = 86_400;
+
+/// Default age (in days) at which the Cabal package index is reported as
+/// stale. Overridable via `$HX_CABAL_INDEX_STALE_DAYS`.
+const DEFAULT_CABAL_INDEX_STALE_DAYS: u64 = 21;
 
 /// Run a toolchain subcommand.
 pub async fn run(command: ToolchainCommands, output: &Output) -> Result<i32> {
@@ -395,8 +403,13 @@ fn warn_if_cabal_index_stale(output: &Output) {
             output.info("Run `cabal update` before building, or it will fail");
         }
         CabalIndexStatus::Present { age } => {
-            let days = age.as_secs() / 86_400;
-            if days > 0 {
+            let days = age.as_secs() / SECONDS_PER_DAY;
+            let threshold = std::env::var(EnvVars::HX_CABAL_INDEX_STALE_DAYS)
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(DEFAULT_CABAL_INDEX_STALE_DAYS);
+
+            if days >= threshold {
                 output.info(&format!(
                     "Cabal package index is {} day{} old (run `cabal update` to refresh)",
                     days,

@@ -11,8 +11,12 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+/// Name of the `[[bin]]` target in `crates/hx-cli/Cargo.toml` — distinct
+/// from the crate's own package name (`hx-cli`).
+const HX_BIN_NAME: &str = "hx";
+
 fn hx() -> Command {
-    Command::cargo_bin("hx").unwrap()
+    Command::cargo_bin(HX_BIN_NAME).unwrap()
 }
 
 #[test]
