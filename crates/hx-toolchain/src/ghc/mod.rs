@@ -15,8 +15,8 @@ pub mod platform;
 pub mod versions;
 
 pub use activate::{
-    GhcSource, ResolutionConfig, ResolvedGhc, create_symlinks, get_path_with_ghc, remove_symlinks,
-    resolve_ghc,
+    GhcSource, ResolutionConfig, ResolvedGhc, create_cabal_symlink, create_symlinks,
+    get_path_with_ghc, remove_symlinks, resolve_ghc,
 };
 pub use download::{
     DownloadOptions, InstallResult, download_and_install_ghc, get_active, list_installed,

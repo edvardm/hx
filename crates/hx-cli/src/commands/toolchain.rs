@@ -8,8 +8,8 @@ use hx_solver::bhc_platform::find_platform_for_bhc;
 use hx_toolchain::{
     BhcInstallOptions, GhcSource, InstallStrategy, RECOMMENDED_BHC_VERSION,
     RECOMMENDED_CABAL_VERSION, RECOMMENDED_GHC_VERSION, SmartCabalInstallOptions,
-    SmartInstallOptions, Toolchain, ToolchainManifest, create_symlinks, install, install_bhc,
-    known_versions, remove_ghc, set_active,
+    SmartInstallOptions, Toolchain, ToolchainManifest, create_cabal_symlink, create_symlinks,
+    install, install_bhc, known_versions, remove_ghc, set_active,
 };
 use hx_ui::{Output, Style};
 
@@ -282,6 +282,15 @@ async fn install_toolchain(
             success = false;
         } else {
             output.status("Done", &format!("Cabal {} installed", version));
+
+            if set_as_active {
+                if let Ok(tc_dir) = toolchain_dir() {
+                    if let Ok(Some(installed)) = hx_toolchain::get_active_cabal(&tc_dir) {
+                        let _ = create_cabal_symlink(&installed);
+                    }
+                }
+            }
+
             warn_if_cabal_index_stale(output);
         }
     }

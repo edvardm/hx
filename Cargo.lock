@@ -1443,6 +1443,7 @@ dependencies = [
 name = "hx-doctor"
 version = "0.9.1"
 dependencies = [
+ "hx-cache",
  "hx-config",
  "hx-core",
  "hx-solver",

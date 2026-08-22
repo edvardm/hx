@@ -3,7 +3,7 @@
 //! Provides utilities for resolving which GHC to use and setting up
 //! the environment for builds.
 
-use crate::ghc::{InstalledGhc, ToolchainManifest};
+use crate::ghc::{InstalledCabal, InstalledGhc, ToolchainManifest};
 use hx_cache::{toolchain_bin_dir, toolchain_dir};
 use hx_core::{Error, Result};
 use std::fs;
@@ -187,9 +187,9 @@ pub fn get_path_with_ghc(ghc: &ResolvedGhc) -> String {
     format!("{}{}{}", bin_dir, separator, current_path)
 }
 
-/// Create symlinks in ~/.hx/bin for the active GHC.
+/// Create symlinks in the toolchain bin directory for the active GHC.
 ///
-/// This allows users to add ~/.hx/bin to their PATH for easy access.
+/// This allows users to add that directory to their `PATH` for easy access.
 pub fn create_symlinks(ghc: &InstalledGhc) -> Result<()> {
     let bin_dir = toolchain_bin_dir()?;
     fs::create_dir_all(&bin_dir).map_err(|e| Error::Io {
@@ -198,50 +198,73 @@ pub fn create_symlinks(ghc: &InstalledGhc) -> Result<()> {
         source: e,
     })?;
 
-    let tools = ["ghc", "ghci", "ghc-pkg", "runghc", "runhaskell", "haddock"];
-
-    for tool in tools {
+    for tool in ["ghc", "ghci", "ghc-pkg", "runghc", "runhaskell", "haddock"] {
         let source = ghc.bin_dir().join(tool_binary_name(tool));
-        let target = bin_dir.join(tool_binary_name(tool));
-
-        if source.exists() {
-            // Remove existing symlink/file
-            let _ = fs::remove_file(&target);
-
-            #[cfg(unix)]
-            {
-                std::os::unix::fs::symlink(&source, &target).map_err(|e| Error::Io {
-                    message: format!("Failed to create symlink for {}", tool),
-                    path: Some(target.clone()),
-                    source: e,
-                })?;
-            }
-
-            #[cfg(windows)]
-            {
-                // On Windows, create a .cmd wrapper instead of symlink
-                let content = format!("@echo off\n\"{}\" %*", source.display());
-                let target_cmd = bin_dir.join(format!("{}.cmd", tool));
-                fs::write(&target_cmd, content).map_err(|e| Error::Io {
-                    message: format!("Failed to create wrapper for {}", tool),
-                    path: Some(target_cmd),
-                    source: e,
-                })?;
-            }
-
-            debug!(
-                "Created symlink: {} -> {}",
-                target.display(),
-                source.display()
-            );
-        }
+        symlink_tool(&source, &bin_dir, tool)?;
     }
 
     info!("Symlinks created in {}", bin_dir.display());
     Ok(())
 }
 
-/// Remove symlinks from ~/.hx/bin.
+/// Create a symlink in the toolchain bin directory for the active Cabal.
+pub fn create_cabal_symlink(cabal: &InstalledCabal) -> Result<()> {
+    let bin_dir = toolchain_bin_dir()?;
+    fs::create_dir_all(&bin_dir).map_err(|e| Error::Io {
+        message: "Failed to create bin directory".into(),
+        path: Some(bin_dir.clone()),
+        source: e,
+    })?;
+
+    let source = cabal
+        .install_path
+        .join("bin")
+        .join(tool_binary_name("cabal"));
+    symlink_tool(&source, &bin_dir, "cabal")?;
+
+    info!("Cabal symlink created in {}", bin_dir.display());
+    Ok(())
+}
+
+/// Symlink (or, on Windows, wrapper-script) a single tool into `bin_dir`.
+fn symlink_tool(source: &Path, bin_dir: &Path, name: &str) -> Result<()> {
+    if !source.exists() {
+        return Ok(());
+    }
+
+    let target = bin_dir.join(tool_binary_name(name));
+    let _ = fs::remove_file(&target);
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, &target).map_err(|e| Error::Io {
+            message: format!("Failed to create symlink for {}", name),
+            path: Some(target.clone()),
+            source: e,
+        })?;
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, create a .cmd wrapper instead of symlink
+        let content = format!("@echo off\n\"{}\" %*", source.display());
+        let target_cmd = bin_dir.join(format!("{}.cmd", name));
+        fs::write(&target_cmd, content).map_err(|e| Error::Io {
+            message: format!("Failed to create wrapper for {}", name),
+            path: Some(target_cmd),
+            source: e,
+        })?;
+    }
+
+    debug!(
+        "Created symlink: {} -> {}",
+        target.display(),
+        source.display()
+    );
+    Ok(())
+}
+
+/// Remove symlinks from the toolchain bin directory.
 pub fn remove_symlinks() -> Result<()> {
     let bin_dir = toolchain_bin_dir()?;
 
@@ -249,7 +272,15 @@ pub fn remove_symlinks() -> Result<()> {
         return Ok(());
     }
 
-    let tools = ["ghc", "ghci", "ghc-pkg", "runghc", "runhaskell", "haddock"];
+    let tools = [
+        "ghc",
+        "ghci",
+        "ghc-pkg",
+        "runghc",
+        "runhaskell",
+        "haddock",
+        "cabal",
+    ];
 
     for tool in tools {
         let target = bin_dir.join(tool_binary_name(tool));
