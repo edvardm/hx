@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use hx_config::{BhcProfile, CompilerBackend, MANIFEST_FILENAME, Manifest, ProjectKind};
+use hx_toolchain::RECOMMENDED_GHC_VERSION;
 use hx_ui::{Output, Spinner};
 use std::fs;
 use std::path::PathBuf;
@@ -84,6 +85,7 @@ pub async fn run(
 
     // Create hx.toml
     let mut manifest = Manifest::new(&project_name, kind);
+    manifest.toolchain.ghc = Some(RECOMMENDED_GHC_VERSION.to_string());
 
     // Set BHC backend if requested
     if let Some(CompilerBackend::Bhc) = backend {

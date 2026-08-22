@@ -212,6 +212,18 @@ async fn install_toolchain(
 ) -> Result<i32> {
     let mut success = true;
 
+    // Default to the recommended GHC version when nothing was requested at all.
+    let ghc_version = if ghc_version.is_none() && cabal.is_none() && hls.is_none() && bhc.is_none()
+    {
+        output.info(&format!(
+            "No version specified, installing recommended GHC {}",
+            RECOMMENDED_GHC_VERSION
+        ));
+        Some(RECOMMENDED_GHC_VERSION.to_string())
+    } else {
+        ghc_version
+    };
+
     // Install GHC
     if let Some(ref version) = ghc_version {
         output.status("Installing", &format!("GHC {}", version));
@@ -356,18 +368,6 @@ async fn install_toolchain(
                 success = false;
             }
         }
-    }
-
-    // If no specific versions requested, show help
-    if ghc_version.is_none() && cabal.is_none() && hls.is_none() && bhc.is_none() {
-        output.warn("No version specified");
-        output.info(&format!(
-            "Example: hx toolchain install {}",
-            RECOMMENDED_GHC_VERSION
-        ));
-        output.info("Or: hx toolchain install --ghc 9.8.2");
-        output.info("Or: hx toolchain install --bhc latest");
-        return Ok(2);
     }
 
     if success { Ok(0) } else { Ok(4) }

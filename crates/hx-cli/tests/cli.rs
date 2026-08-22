@@ -80,6 +80,23 @@ fn test_init_bin_project() {
 }
 
 #[test]
+fn test_init_pins_recommended_ghc_version() {
+    let temp = TempDir::new().unwrap();
+    let project_dir = temp.path().join("pinned");
+
+    hx().args(["init", "--name", "pinned"])
+        .arg(&project_dir)
+        .assert()
+        .success();
+
+    let hx_toml = fs::read_to_string(project_dir.join("hx.toml")).unwrap();
+    assert!(hx_toml.contains(&format!(
+        "ghc = \"{}\"",
+        hx_toolchain::RECOMMENDED_GHC_VERSION
+    )));
+}
+
+#[test]
 fn test_init_lib_project() {
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path().join("mylib");
