@@ -74,10 +74,16 @@ pub async fn download_and_install_cabal(
         .unwrap_or_else(|| Platform::current().expect("Unsupported platform"));
 
     // Check if already installed
-    let manifest = ToolchainManifest::load(&options.toolchain_dir)?;
+    let mut manifest = ToolchainManifest::load(&options.toolchain_dir)?;
     if !options.force && manifest.is_cabal_installed(&options.version) {
         info!("Cabal {} is already installed", options.version);
         let installed = manifest.get_cabal(&options.version).unwrap().clone();
+
+        if options.set_active {
+            manifest.set_active_cabal(&options.version)?;
+            manifest.save(&options.toolchain_dir)?;
+        }
+
         return Ok(CabalInstallResult {
             installed,
             was_cached: true,

@@ -53,6 +53,9 @@ impl EnvVars {
     /// Pinned Ed25519 public key (hex) for BHC Platform snapshot verification.
     pub const HX_BHC_PLATFORM_PUBKEY: &'static str = "HX_BHC_PLATFORM_PUBKEY";
 
+    /// Age in days at which a Cabal package index is reported as stale.
+    pub const HX_CABAL_INDEX_STALE_DAYS: &'static str = "HX_CABAL_INDEX_STALE_DAYS";
+
     // ─── Build Settings ──────────────────────────────────────────────────────
 
     /// Number of parallel jobs for builds.

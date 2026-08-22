@@ -11,8 +11,12 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+/// Name of the `[[bin]]` target in `crates/hx-cli/Cargo.toml` — distinct
+/// from the crate's own package name (`hx-cli`).
+const HX_BIN_NAME: &str = "hx";
+
 fn hx() -> Command {
-    Command::cargo_bin("hx").unwrap()
+    Command::cargo_bin(HX_BIN_NAME).unwrap()
 }
 
 #[test]
@@ -77,6 +81,23 @@ fn test_init_bin_project() {
     let main_hs = fs::read_to_string(project_dir.join("src/Main.hs")).unwrap();
     assert!(main_hs.contains("module Main"));
     assert!(main_hs.contains("main :: IO ()"));
+}
+
+#[test]
+fn test_init_pins_recommended_ghc_version() {
+    let temp = TempDir::new().unwrap();
+    let project_dir = temp.path().join("pinned");
+
+    hx().args(["init", "--name", "pinned"])
+        .arg(&project_dir)
+        .assert()
+        .success();
+
+    let hx_toml = fs::read_to_string(project_dir.join("hx.toml")).unwrap();
+    assert!(hx_toml.contains(&format!(
+        "ghc = \"{}\"",
+        hx_toolchain::RECOMMENDED_GHC_VERSION
+    )));
 }
 
 #[test]

@@ -42,7 +42,7 @@ pub use store::{
 /// - macOS: `~/Library/Caches/hx`
 /// - Windows: `%LOCALAPPDATA%\hx\cache`
 pub fn global_cache_dir() -> Result<PathBuf> {
-    if let Some(dir) = xdg_dir(std::env::var("XDG_CACHE_HOME").ok()) {
+    if let Some(dir) = xdg_dir(std::env::var("XDG_CACHE_HOME").ok(), "hx") {
         return Ok(dir);
     }
     let dirs = ProjectDirs::from("io", "raskell", "hx")
@@ -55,6 +55,47 @@ pub fn cabal_store_dir() -> Result<PathBuf> {
     Ok(global_cache_dir()?.join("cabal").join("store"))
 }
 
+/// Age of Cabal's own Hackage package index, or whether it exists at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CabalIndexStatus {
+    /// No package index found at any known Cabal directory.
+    Missing,
+    /// Index found, with its age since the last `cabal update`.
+    Present { age: std::time::Duration },
+}
+
+/// Check Cabal's own Hackage package index (not an hx-managed directory).
+///
+/// hx doesn't control where this lives, and Cabal's own layout has changed
+/// across versions — try the XDG-style cache dir (Cabal 3.10+, respects
+/// `$XDG_CACHE_HOME` the same way hx's own dirs do), then the pre-3.10
+/// `~/.cabal` layout.
+pub fn cabal_index_status() -> CabalIndexStatus {
+    let candidates = [
+        xdg_dir(std::env::var("XDG_CACHE_HOME").ok(), "cabal"),
+        directories::BaseDirs::new().map(|d| d.home_dir().join(".cache").join("cabal")),
+        directories::BaseDirs::new().map(|d| d.home_dir().join(".cabal")),
+    ];
+
+    for dir in candidates.into_iter().flatten() {
+        let timestamp = dir
+            .join("packages")
+            .join("hackage.haskell.org")
+            .join("01-index.timestamp");
+        if let Ok(age) = std::fs::metadata(&timestamp)
+            .and_then(|m| m.modified())
+            .and_then(|t| {
+                t.elapsed()
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            })
+        {
+            return CabalIndexStatus::Present { age };
+        }
+    }
+
+    CabalIndexStatus::Missing
+}
+
 /// Get the global config directory.
 ///
 /// Respects `$XDG_CONFIG_HOME` if set to a non-empty value, on any platform.
@@ -63,7 +104,7 @@ pub fn cabal_store_dir() -> Result<PathBuf> {
 /// - macOS: `~/Library/Application Support/hx`
 /// - Windows: `%APPDATA%\hx\config`
 pub fn global_config_dir() -> Result<PathBuf> {
-    if let Some(dir) = xdg_dir(std::env::var("XDG_CONFIG_HOME").ok()) {
+    if let Some(dir) = xdg_dir(std::env::var("XDG_CONFIG_HOME").ok(), "hx") {
         return Ok(dir);
     }
     let dirs = ProjectDirs::from("io", "raskell", "hx")
@@ -71,10 +112,10 @@ pub fn global_config_dir() -> Result<PathBuf> {
     Ok(dirs.config_dir().to_path_buf())
 }
 
-fn xdg_dir(env_value: Option<String>) -> Option<PathBuf> {
+fn xdg_dir(env_value: Option<String>, subdir: &str) -> Option<PathBuf> {
     env_value
         .filter(|v| !v.is_empty())
-        .map(|v| PathBuf::from(v).join("hx"))
+        .map(|v| PathBuf::from(v).join(subdir))
 }
 
 /// Get the global config file path.
@@ -169,21 +210,21 @@ mod tests {
     use std::sync::Mutex;
 
     #[test]
-    fn xdg_dir_appends_hx_to_set_value() {
+    fn xdg_dir_appends_subdir_to_set_value() {
         assert_eq!(
-            xdg_dir(Some("/custom/config".to_string())),
+            xdg_dir(Some("/custom/config".to_string()), "hx"),
             Some(PathBuf::from("/custom/config/hx"))
         );
     }
 
     #[test]
     fn xdg_dir_falls_back_when_unset() {
-        assert_eq!(xdg_dir(None), None);
+        assert_eq!(xdg_dir(None, "hx"), None);
     }
 
     #[test]
     fn xdg_dir_falls_back_when_empty() {
-        assert_eq!(xdg_dir(Some(String::new())), None);
+        assert_eq!(xdg_dir(Some(String::new()), "hx"), None);
     }
 
     // std::env::set_var is process-global and `cargo test` runs tests in
