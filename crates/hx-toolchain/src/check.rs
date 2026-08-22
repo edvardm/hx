@@ -1,6 +1,8 @@
 //! Toolchain version checking and auto-installation.
 
+use crate::cabal::get_active_cabal;
 use crate::detect::{ToolStatus, Toolchain};
+use crate::ghc::{create_cabal_symlink, create_symlinks, get_active};
 use crate::install::{self, SmartCabalInstallOptions, SmartInstallOptions};
 use hx_core::{Error, Fix, Result, Version};
 use std::io::{self, Write};
@@ -181,11 +183,23 @@ pub async fn ensure_toolchain(
     if let Some((version, _)) = &check.ghc_mismatch {
         let options = SmartInstallOptions::new(version).with_set_active(true);
         install::install_ghc_smart(&options).await?;
+
+        if let Ok(tc_dir) = hx_cache::toolchain_dir()
+            && let Ok(Some(installed)) = get_active(&tc_dir)
+        {
+            let _ = create_symlinks(&installed);
+        }
     }
 
     if let Some((version, _)) = &check.cabal_mismatch {
         let options = SmartCabalInstallOptions::new(version).with_set_active(true);
         install::install_cabal_smart(&options).await?;
+
+        if let Ok(tc_dir) = hx_cache::toolchain_dir()
+            && let Ok(Some(installed)) = get_active_cabal(&tc_dir)
+        {
+            let _ = create_cabal_symlink(&installed);
+        }
     }
 
     Ok(())

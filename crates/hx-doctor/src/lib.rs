@@ -133,6 +133,9 @@ pub async fn run_checks(project_dir: Option<&Path>) -> DoctorReport {
     // Check Cabal
     check_cabal(&toolchain, &mut report);
 
+    // Check whether hx-managed tools are reachable directly (not just via hx)
+    check_toolchain_bin_on_path(&mut report);
+
     // Check HLS
     check_hls(&toolchain, &mut report);
 
@@ -220,6 +223,63 @@ fn check_cabal(toolchain: &Toolchain, report: &mut DoctorReport) {
                 .unwrap_or_else(|| "installed".to_string())
         )));
     }
+}
+
+fn check_toolchain_bin_on_path(report: &mut DoctorReport) {
+    // Nothing hx-managed has been activated yet; nothing to warn about.
+    let hx_bin_dir = hx_cache::toolchain_bin_dir().ok().filter(|d| d.exists());
+    if let Some(bin_dir) = &hx_bin_dir {
+        report_bin_dir_on_path(
+            report,
+            bin_dir,
+            "hx-managed ghc/cabal",
+            "only usable through `hx`, not directly",
+        );
+    }
+
+    // ghcup's own bin dir — its installer is supposed to add this to PATH
+    // itself, but package-manager-installed ghcup doesn't always do that.
+    // Skip it when it's the same directory hx just reported above (ghcup
+    // with GHCUP_USE_XDG_DIRS set shares hx's own bin dir).
+    if let Some(bin_dir) = hx_cache::ghcup_bin_dir()
+        && hx_bin_dir.as_deref() != Some(bin_dir.as_path())
+    {
+        report_bin_dir_on_path(
+            report,
+            &bin_dir,
+            "ghcup-installed tools",
+            "installed via ghcup but not directly runnable",
+        );
+    }
+}
+
+/// Report whether `bin_dir` is on `PATH`, with an actionable fix if not.
+fn report_bin_dir_on_path(report: &mut DoctorReport, bin_dir: &Path, label: &str, hint: &str) {
+    let on_path = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).any(|p| p == bin_dir))
+        .unwrap_or(false);
+
+    if on_path {
+        report.add(Diagnostic::info(format!(
+            "{label} on PATH: {}",
+            bin_dir.display()
+        )));
+        return;
+    }
+
+    let command = if cfg!(windows) {
+        format!("setx PATH \"%PATH%;{}\"", bin_dir.display())
+    } else {
+        format!("export PATH=\"{}:$PATH\"", bin_dir.display())
+    };
+
+    report.add(
+        Diagnostic::warning(format!(
+            "{label} ({}) not on PATH — {hint}",
+            bin_dir.display()
+        ))
+        .with_fix(Fix::with_command("Add it to PATH", command)),
+    );
 }
 
 fn check_hls(toolchain: &Toolchain, report: &mut DoctorReport) {

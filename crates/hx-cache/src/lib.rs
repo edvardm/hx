@@ -153,13 +153,50 @@ pub fn toolchain_dir() -> Result<PathBuf> {
 
 /// Get the bin directory for hx-managed tool symlinks.
 ///
-/// Uses `~/.hx/bin` on all platforms.
+/// Respects `$XDG_BIN_HOME` if set to a non-empty value (used as-is — this is
+/// a `PATH` directory of executables, not per-app data, so no `hx`
+/// subdirectory is appended). Otherwise defaults to `~/.local/bin`, the de
+/// facto standard for user-installed executables (systemd's
+/// `file-hierarchy(7)`; what `pipx`, `uv tool install`, and `cargo install`
+/// effectively use).
 ///
-/// This directory can be added to PATH for direct access to hx-managed tools.
+/// This directory can be added to `PATH` for direct access to hx-managed
+/// tools; `hx doctor` reports when it isn't.
 pub fn toolchain_bin_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("XDG_BIN_HOME")
+        && !dir.is_empty()
+    {
+        return Ok(PathBuf::from(dir));
+    }
     let home = directories::BaseDirs::new()
         .ok_or_else(|| Error::config("could not determine home directory"))?;
-    Ok(home.home_dir().join(".hx").join("bin"))
+    Ok(home.home_dir().join(".local").join("bin"))
+}
+
+/// Get ghcup's own bin directory, if it has one installed.
+///
+/// hx doesn't manage this — it's ghcup's own directory, and where that is
+/// depends on ghcup's own env vars (see
+/// <https://www.haskell.org/ghcup/guide/config/#env-variables>):
+/// - `GHCUP_USE_XDG_DIRS` set: ghcup uses `$XDG_BIN_HOME` (default
+///   `~/.local/bin`) — the same resolution [`toolchain_bin_dir`] uses, so
+///   ghcup and hx share a bin directory in this mode.
+/// - Otherwise: `$GHCUP_INSTALL_BASE_PREFIX/.ghcup/bin` (base defaults to
+///   `$HOME`). ghcup's official installer script is supposed to add this to
+///   `PATH` itself, but package manager-installed ghcup (e.g. via Homebrew)
+///   doesn't always.
+pub fn ghcup_bin_dir() -> Option<PathBuf> {
+    let dir = if std::env::var_os("GHCUP_USE_XDG_DIRS").is_some() {
+        toolchain_bin_dir().ok()?
+    } else {
+        let base = std::env::var("GHCUP_INSTALL_BASE_PREFIX")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()))?;
+        base.join(".ghcup").join("bin")
+    };
+    dir.exists().then_some(dir)
 }
 
 /// Ensure a directory exists.
