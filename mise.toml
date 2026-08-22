@@ -35,3 +35,7 @@ depends = ["fmt-check", "clippy", "test"]
 [tasks.run]
 description = "Run the hx CLI"
 run = "cargo run -p hx-cli --"
+
+[tasks.local-install]
+description = "Install a local dev build of hx to ~/.cargo/bin (release by default; pass --debug for a debug build)"
+run = "cargo install --path crates/hx-cli"
