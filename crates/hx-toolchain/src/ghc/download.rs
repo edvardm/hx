@@ -75,10 +75,16 @@ pub async fn download_and_install_ghc(options: &DownloadOptions) -> Result<Insta
         .unwrap_or_else(|| Platform::current().expect("Unsupported platform"));
 
     // Check if already installed
-    let manifest = ToolchainManifest::load(&options.toolchain_dir)?;
+    let mut manifest = ToolchainManifest::load(&options.toolchain_dir)?;
     if !options.force && manifest.is_installed(&options.version) {
         info!("GHC {} is already installed", options.version);
         let installed = manifest.get_ghc(&options.version).unwrap().clone();
+
+        if options.set_active {
+            manifest.set_active(&options.version)?;
+            manifest.save(&options.toolchain_dir)?;
+        }
+
         return Ok(InstallResult {
             installed,
             was_cached: true,

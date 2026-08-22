@@ -2,14 +2,14 @@
 
 use crate::cli::ToolchainCommands;
 use anyhow::Result;
-use hx_cache::toolchain_dir;
+use hx_cache::{CabalIndexStatus, toolchain_dir};
 use hx_config::{Manifest, find_project_root};
 use hx_solver::bhc_platform::find_platform_for_bhc;
 use hx_toolchain::{
     BhcInstallOptions, GhcSource, InstallStrategy, RECOMMENDED_BHC_VERSION,
-    RECOMMENDED_CABAL_VERSION, RECOMMENDED_GHC_VERSION, SmartInstallOptions, Toolchain,
-    ToolchainManifest, create_symlinks, install, install_bhc, known_versions, remove_ghc,
-    set_active,
+    RECOMMENDED_CABAL_VERSION, RECOMMENDED_GHC_VERSION, SmartCabalInstallOptions,
+    SmartInstallOptions, Toolchain, ToolchainManifest, create_symlinks, install, install_bhc,
+    known_versions, remove_ghc, set_active,
 };
 use hx_ui::{Output, Style};
 
@@ -212,17 +212,23 @@ async fn install_toolchain(
 ) -> Result<i32> {
     let mut success = true;
 
-    // Default to the recommended GHC version when nothing was requested at all.
-    let ghc_version = if ghc_version.is_none() && cabal.is_none() && hls.is_none() && bhc.is_none()
-    {
-        output.info(&format!(
-            "No version specified, installing recommended GHC {}",
-            RECOMMENDED_GHC_VERSION
-        ));
-        Some(RECOMMENDED_GHC_VERSION.to_string())
-    } else {
-        ghc_version
-    };
+    // Default to the recommended GHC + Cabal, activated, when nothing was
+    // requested at all — a bare `hx toolchain install` should leave you with
+    // a working toolchain, not just downloaded-but-inactive files.
+    let (ghc_version, cabal, set_as_active) =
+        if ghc_version.is_none() && cabal.is_none() && hls.is_none() && bhc.is_none() {
+            output.info(&format!(
+                "No version specified, installing recommended GHC {} and Cabal {}",
+                RECOMMENDED_GHC_VERSION, RECOMMENDED_CABAL_VERSION
+            ));
+            (
+                Some(RECOMMENDED_GHC_VERSION.to_string()),
+                Some(RECOMMENDED_CABAL_VERSION.to_string()),
+                true,
+            )
+        } else {
+            (ghc_version, cabal, set_as_active)
+        };
 
     // Install GHC
     if let Some(ref version) = ghc_version {
@@ -256,22 +262,27 @@ async fn install_toolchain(
         }
     }
 
-    // Install Cabal via ghcup (if requested)
+    // Install Cabal (direct download preferred, falls back to ghcup)
     if let Some(ref version) = cabal {
-        let toolchain = Toolchain::detect().await;
-        if !toolchain.has_ghcup() {
-            output.error("ghcup is required to install Cabal");
-            output.info(&format!(
-                "Install ghcup: {}",
-                install::ghcup_install_command()
-            ));
+        output.status("Installing", &format!("Cabal {}", version));
+
+        let strategy = if use_ghcup {
+            InstallStrategy::Ghcup
+        } else {
+            InstallStrategy::Smart
+        };
+
+        let options = SmartCabalInstallOptions::new(version)
+            .with_strategy(strategy)
+            .with_set_active(set_as_active)
+            .with_force(force);
+
+        if let Err(e) = install::install_cabal_smart(&options).await {
+            output.print_error(&e);
             success = false;
         } else {
-            output.status("Installing", &format!("Cabal {}", version));
-            if let Err(e) = install::install_cabal(version).await {
-                output.print_error(&e);
-                success = false;
-            }
+            output.status("Done", &format!("Cabal {} installed", version));
+            warn_if_cabal_index_stale(output);
         }
     }
 
@@ -371,6 +382,29 @@ async fn install_toolchain(
     }
 
     if success { Ok(0) } else { Ok(4) }
+}
+
+/// Fetch the Hackage package index, using the just-activated GHC/Cabal.
+///
+/// A freshly installed Cabal has no package index at all, so even a
+/// `base`-only build fails with `[Cabal-7160]` until this runs once.
+fn warn_if_cabal_index_stale(output: &Output) {
+    match hx_cache::cabal_index_status() {
+        CabalIndexStatus::Missing => {
+            output.warn("Cabal package index has never been initialized");
+            output.info("Run `cabal update` before building, or it will fail");
+        }
+        CabalIndexStatus::Present { age } => {
+            let days = age.as_secs() / 86_400;
+            if days > 0 {
+                output.info(&format!(
+                    "Cabal package index is {} day{} old (run `cabal update` to refresh)",
+                    days,
+                    if days == 1 { "" } else { "s" }
+                ));
+            }
+        }
+    }
 }
 
 async fn remove(version: &str, yes: bool, output: &Output) -> Result<i32> {
